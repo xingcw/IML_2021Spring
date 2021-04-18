@@ -15,6 +15,9 @@ X = np.concatenate([X, np.square(X), np.exp(X), np.cos(X), np.ones(shape=(X.shap
 print('the size of featrues is: {}'.format(X.shape)) #(700, 21)
 
 def BestAlphaList(times):
+    '''
+    show the distribution of alpha values leading to least score, running $times times
+    '''
     LeastScoreAlphas = np.zeros(shape = (times,1))
     LeastScores = np.zeros(shape = (times,1))
     for rnd in range(times):
@@ -41,7 +44,10 @@ def BestAlphaList(times):
     print(AlphaList)
     return AlphaList
 
-def FindBestAlpha(): 
+def FindBestAlpha():
+    '''
+    A script to find the best alpha and visualize
+    '''
     AlphaList = BestAlphaList(1000)
     print(np.mean(AlphaList['alpha']), np.mean(AlphaList['score']))
     least_alphas = AlphaList['alpha'].tolist()
@@ -54,6 +60,9 @@ def FindBestAlpha():
     plt.show()
 
 def showAlphaEffect(Afrom, Ato):
+    '''
+    show how alpha affects the result of score and visualize
+    '''
     scores = []
     # alphas = [0.001, 0.1, 1, 10, 100]
     alphas = np.arange(Afrom, Ato, 1).tolist()
@@ -91,6 +100,9 @@ def showAlphaEffect(Afrom, Ato):
     pd.DataFrame(data=np.asarray(weights)).to_csv(os.path.join(data_path,'weights.csv'), index=None, header=False)
 
 def fitBestModel(alp):
+    '''
+    Fit model using parameter $alp, ready for submission
+    '''
     best_model = Ridge(alpha=alp, fit_intercept=False).fit(X, y)
     pd.DataFrame(data=best_model.coef_).to_csv(os.path.join(data_path,'submission1.csv'), index=None, header=False)
 
