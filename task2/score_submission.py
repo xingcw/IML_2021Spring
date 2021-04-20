@@ -1,10 +1,12 @@
 import pandas as pd
 import numpy as np
+import os
 import sklearn.metrics as metrics
 
 VITALS = ['LABEL_RRate', 'LABEL_ABPm', 'LABEL_SpO2', 'LABEL_Heartrate']
 TESTS = ['LABEL_BaseExcess', 'LABEL_Fibrinogen', 'LABEL_AST', 'LABEL_Alkalinephos', 'LABEL_Bilirubin_total',
-         'LABEL_Lactate', 'LABEL_TroponinI', 'LABEL_SaO2', 'LABEL_Bilirubin_direct', 'LABEL_EtCO2']
+         'LABEL_Lactate', 'LABEL_TroponinI', 'LABEL_SaO2',
+         'LABEL_Bilirubin_direct', 'LABEL_EtCO2']
 
 
 def get_score(df_true, df_submission):
@@ -17,8 +19,9 @@ def get_score(df_true, df_submission):
     print(task1, task2, task3)
     return score
 
-
-filename = 'sample.zip'
+current_path = os.path.dirname(os.path.abspath(__file__))
+submission_path = os.path.join(current_path,'submissions')
+filename = os.path.join(submission_path, "predictions.zip")
 df_submission = pd.read_csv(filename)
 
 # generate a baseline based on sample.zip

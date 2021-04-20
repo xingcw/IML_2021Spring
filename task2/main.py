@@ -40,9 +40,9 @@ label_reg_names = ['LABEL_RRate', 'LABEL_ABPm', 'LABEL_SpO2', 'LABEL_Heartrate']
 
 PARAM_DIST = {
     "n_estimators": stats.randint(150, 500),
-    "learning_rate": stats.uniform(0.01, 0.07),
+    "learning_rate": stats.uniform(0.01, 0.09),
     "max_depth": [4, 5, 6, 7],
-    "colsample_bytree": stats.uniform(0.5, 0.45),
+    "colsample_bytree": stats.uniform(0.5, 0.5),
     "min_child_weight": [1, 2, 3, 4, 5, 6],
     "gamma": [0.1, 0.2, 0.3]
 }
@@ -140,6 +140,8 @@ def preproc(in_feats, source):
     return out_feats
 
 def classification_task(train_data, train_labels):
+    scores = []
+    labels = []
     for idx, label_name in enumerate(label_clf_names):
         sampler = RandomUnderSampler()
         train_this_label = train_labels[:, idx]
@@ -166,19 +168,24 @@ def classification_task(train_data, train_labels):
                                  verbose=3,
                                  n_jobs=-1, )
         clf.fit(X_train, y_train, eval_metric='logloss')
+        auc_score = roc_auc_score(y_val, clf.best_estimator_.predict_proba(X_val)[:, 1])
         print(clf.best_estimator_.predict_proba(X_val)[:, 1])
-        print(
-            f"ROC score on validation set "
-            f"{roc_auc_score(y_val, clf.best_estimator_.predict_proba(X_val)[:, 1])}"
-        )
-        print(f"CV score {clf.best_score_}")
-        print(f"Best parameters is {clf.best_params_}")
+        print("ROC score on validation set ", auc_score)
+        print("CV score ", clf.best_score_)
+        print("Best parameters is ", clf.best_params_)
+
+        scores.append([clf.best_score_, auc_score])
+        labels.append(label_name)
 
         joblib.dump(clf.best_estimator_, os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
         time.sleep(5)
+    result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (auc)"], index=labels)
+    return result
 
 def regression_task(train_data, train_labels):
-    for idx, label_name in enumerate(label_reg_names[1:]):
+    scores = []
+    labels = []
+    for idx, label_name in enumerate(label_reg_names[2:3]):
         train_this_label = train_labels[:, idx]
         print("=" * 50, '\n')
         print("Regression--- regressing %dth label: %s" %(idx + 1,label_name))
@@ -201,31 +208,36 @@ def regression_task(train_data, train_labels):
                                  verbose=3,
                                  n_jobs=-1, )
         reg.fit(X_train, y_train)
-        print("ROC score on test set ", r2_score(y_val, reg.best_estimator_.predict(X_val)))
+        r2 = r2_score(y_val, reg.best_estimator_.predict(X_val))
+        print("R2 score on test set ", r2)
         print("CV score ", reg.best_score_)
         print("Best parameters ", reg.best_params_)
+        scores.append([reg.best_score_, r2])
+        labels.append(label_name)
 
         joblib.dump(reg.best_estimator_, os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
-        time.sleep(5)
+
+    result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (R2)"], index=labels)
+    return result
+
 
 def predict(test_pids, test_feats):
     preds = [test_pids]
-    all_labels = ['pid']
-    all_labels.extend(label_clf_names)
-    all_labels.extend(label_reg_names)
+    all_labels = ['pid']+label_clf_names+label_reg_names
     for idx, label_name in enumerate(label_clf_names):
         model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
-        print("Classification Predicting--- ", idx, "th class ", label_name, "......")
+        print("Classification Predicting--- ", idx+1, "th class ", label_name, "......")
         pred = model.predict_proba(test_feats)
-        preds.append(pred[:, 1])
+        preds.append(pred[:,1])
     for idx, label_name in enumerate(label_reg_names):
         model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
-        print("Regression Predicting--- ", idx, "th label ", label_name, "......")
+        print("Regression Predicting--- ", idx+1, "th label ", label_name, "......")
         pred = model.predict(test_feats)
         preds.append(pred)
-    pd.DataFrame(np.column_stack(preds), columns=all_labels).to_csv(
-        os.path.join(submission_path,"predictions.csv"), index=False, float_format='%.3f')
-
+    result = pd.DataFrame(np.column_stack(preds), columns=all_labels)
+    result.to_csv(os.path.join(submission_path,"predictions.zip"), index=False, float_format='%.3f', compression='zip')
+    result.to_csv(os.path.join(submission_path,"predictions.csv"), index=False, float_format='%.3f')
+    
 
 def main():
     # ---------------------load data-------------------------------
@@ -245,8 +257,10 @@ def main():
     test_features_extracted = preproc(test_features, source='test')
 
     # ----------------------train models----------------------------
-    classification_task(train_features_extracted, train_labels_clf)
-    regression_task(train_features_extracted, train_labels_reg)
+    # clf_scores = classification_task(train_features_extracted, train_labels_clf)
+    # print(clf_scores)
+    # reg_scores = regression_task(train_features_extracted, train_labels_reg)
+    # print(reg_scores)
 
     # ----------------------prediction-------------------------------
     predict(test_pids, test_features_extracted)
