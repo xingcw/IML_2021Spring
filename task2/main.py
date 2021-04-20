@@ -1,3 +1,5 @@
+#main.py
+
 import os
 import time
 import joblib
@@ -14,9 +16,15 @@ from imblearn.under_sampling import RandomUnderSampler
 from sklearn.metrics import roc_auc_score, classification_report, confusion_matrix, r2_score
 from imblearn.under_sampling import RandomUnderSampler
 
+# ---------------------Specify Directory-------------------------------
 current_path = os.path.dirname(os.path.abspath(__file__))
 data_path = os.path.join(current_path,'datasets')
 model_path = os.path.join(current_path,'models')
+if not os.path.exists(model_path):
+    os.makedirs(model_path)
+submission_path = os.path.join(current_path,'submissions')
+if not os.path.exists(submission_path):
+    os.makedirs(submission_path)
 
 feat_names = ["Age", "EtCO2", "PTT", "BUN", "Lactate", "Temp", "Hgb",
               "HCO3", "BaseExcess", "RRate", "Fibrinogen", "Phosphate", "WBC", "Creatinine",
@@ -39,7 +47,6 @@ PARAM_DIST = {
     "gamma": [0.1, 0.2, 0.3]
 }
 
-
 def imputation(raw_feats, raw_feats_median, num_person, rows_per_person):
     imputed_features = np.zeros_like(raw_feats)
     for person_id in range(num_person):
@@ -61,7 +68,6 @@ def imputation(raw_feats, raw_feats_median, num_person, rows_per_person):
         imputed_features[start_row_id: start_row_id + rows_per_person] = feats_block
 
     return imputed_features
-
 
 def preproc(in_feats, source):
     rows_per_person = 12
@@ -133,7 +139,6 @@ def preproc(in_feats, source):
 
     return out_feats
 
-
 def classification_task(train_data, train_labels):
     for idx, label_name in enumerate(label_clf_names):
         sampler = RandomUnderSampler()
@@ -172,7 +177,6 @@ def classification_task(train_data, train_labels):
         joblib.dump(clf.best_estimator_, os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
         time.sleep(5)
 
-
 def regression_task(train_data, train_labels):
     for idx, label_name in enumerate(label_reg_names[1:]):
         train_this_label = train_labels[:, idx]
@@ -204,60 +208,48 @@ def regression_task(train_data, train_labels):
         joblib.dump(reg.best_estimator_, os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
         time.sleep(5)
 
-
 def predict(test_pids, test_feats):
     preds = [test_pids]
     all_labels = ['pid']
     all_labels.extend(label_clf_names)
     all_labels.extend(label_reg_names)
     for idx, label_name in enumerate(label_clf_names):
-        model = joblib.load(f'models/xgboost_fine_{label_name}.pkl')
-        print(f'[Classification Prediction] {idx}th class {label_name}......')
+        model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
+        print("Classification Predicting--- ", idx, "th class ", label_name, "......")
         pred = model.predict_proba(test_feats)
         preds.append(pred[:, 1])
     for idx, label_name in enumerate(label_reg_names):
-        model = joblib.load(f'models/xgboost_fine_{label_name}.pkl')
-        print(f'[Regression Prediction] {idx}th label {label_name}......')
+        model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
+        print("Regression Predicting--- ", idx, "th label ", label_name, "......")
         pred = model.predict(test_feats)
         preds.append(pred)
-    pd.DataFrame(np.column_stack(preds), columns=all_labels).to_csv('submissions/xgb_preds.csv', index=False,
-                                                                    float_format='%.3f')
+    pd.DataFrame(np.column_stack(preds), columns=all_labels).to_csv(
+        os.path.join(submission_path,"predictions.csv"), index=False, float_format='%.3f')
 
 
 def main():
-
     # ---------------------load data-------------------------------
-    print("Load dataset.......")
-    # train_features = pd.read_csv(os.path.join(data_path,'train_features.csv'), index_col=0).to_numpy()
-    # train_labels = pd.read_csv(os.path.join(data_path,'train_labels.csv'), index_col=0).to_numpy()
-    # test_features = pd.read_csv(os.path.join(data_path,'test_features.csv'), index_col=0).to_numpy()
-    train_feats = pd.read_csv(os.path.join(data_path,'train_features.csv'), header=0).values
-    train_feats = train_feats[:, 2:] # From Age (ignore PID and Time)
-    test_feats = pd.read_csv(os.path.join(data_path,'test_features.csv'), header=0).values
-    test_pids = test_feats[:, 0].reshape(-1, 12)[:, 0] #reshape to n*12 matrix, and pick the first column
-    test_feats = test_feats[:, 2:]
-    train_labels = pd.read_csv(os.path.join(data_path,'train_labels.csv'), header=0).values
-    train_labels = train_labels[:, 1:] # Exclude PID
+    print("Loading dataset .......")
+    train_features = pd.read_csv(os.path.join(data_path,'train_features.csv'), index_col=0).to_numpy()
+    train_features = train_features[:,1:]
+    train_labels = pd.read_csv(os.path.join(data_path,'train_labels.csv'), index_col=0).to_numpy()
+    test_features = pd.read_csv(os.path.join(data_path,'test_features.csv')).to_numpy()
+    test_pids = test_features[:, 0].reshape(-1, 12)[:, 0] #reshape to n*12 matrix, and pick the first column
+    test_features = test_features[:,2:]
+
     train_labels_clf = train_labels[:, :11]
     train_labels_reg = train_labels[:, 11:]
 
     # ---------------------extract features-------------------------
-    train_feats_extracted = preproc(train_feats, source='train')
-    test_feats_extracted = preproc(test_feats, source='test')
-
-    # ---------------------make dirs--------------------------------
-    if not os.path.exists('submissions'):
-        os.makedirs('submissions')
-    if not os.path.exists('models'):
-        os.makedirs('models')
+    train_features_extracted = preproc(train_features, source='train')
+    test_features_extracted = preproc(test_features, source='test')
 
     # ----------------------train models----------------------------
-    # classification_task(train_feats_extracted, train_labels_clf)
-    regression_task(train_feats_extracted, train_labels_reg)
+    classification_task(train_features_extracted, train_labels_clf)
+    regression_task(train_features_extracted, train_labels_reg)
 
     # ----------------------prediction-------------------------------
-    # predict(test_pids, test_feats_extracted)
+    predict(test_pids, test_features_extracted)
 
 
-if __name__ == '__main__':
-    main()
+main()
