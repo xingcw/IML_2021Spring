@@ -141,8 +141,8 @@ def preproc(in_feats, source):
 
 def classification_task(train_data, train_labels):
     scores = []
-    labels = []
-    for idx, label_name in enumerate(label_clf_names):
+    for idx in range(len(label_clf_names)):
+        label_name = label_clf_names[idx]
         sampler = RandomUnderSampler()
         train_this_label = train_labels[:, idx]
         train_this_data, train_this_label = sampler.fit_resample(train_data, train_this_label)
@@ -175,17 +175,16 @@ def classification_task(train_data, train_labels):
         print("Best parameters is ", clf.best_params_)
 
         scores.append([clf.best_score_, auc_score])
-        labels.append(label_name)
 
         joblib.dump(clf.best_estimator_, os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
         time.sleep(5)
-    result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (auc)"], index=labels)
+    result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (auc)"], index=label_clf_names)
     return result
 
 def regression_task(train_data, train_labels):
     scores = []
-    labels = []
-    for idx, label_name in enumerate(label_reg_names[2:3]):
+    for idx in range(len(label_reg_names)):
+        label_name = label_reg_names[idx]
         train_this_label = train_labels[:, idx]
         print("=" * 50, '\n')
         print("Regression--- regressing %dth label: %s" %(idx + 1,label_name))
@@ -197,8 +196,7 @@ def regression_task(train_data, train_labels):
         feats, labels = train_data[shuffle], train_this_label[shuffle]
         X_train, X_val = feats[:split_id], feats[split_id:]
         y_train, y_val = labels[:split_id], labels[split_id:]
-
-        model = xgb.XGBRegressor(objective='reg:squarederror', use_label_encoder=False)
+        model = xgb.XGBRegressor(objective='reg:squarederror')
         reg = RandomizedSearchCV(estimator=model,
                                  param_distributions=PARAM_DIST,
                                  cv=5,
@@ -213,11 +211,10 @@ def regression_task(train_data, train_labels):
         print("CV score ", reg.best_score_)
         print("Best parameters ", reg.best_params_)
         scores.append([reg.best_score_, r2])
-        labels.append(label_name)
 
         joblib.dump(reg.best_estimator_, os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
 
-    result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (R2)"], index=labels)
+    result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (R2)"], index=label_reg_names)
     return result
 
 
@@ -226,12 +223,14 @@ def predict(test_pids, test_feats):
     all_labels = ['pid']+label_clf_names+label_reg_names
     for idx, label_name in enumerate(label_clf_names):
         model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
-        print("Classification Predicting--- ", idx+1, "th class ", label_name, "......")
+        print("Classification Predicting--- ", idx+1, "th class ", label_name, 
+        " using xgboost_fine_"+label_name+".pkl......")
         pred = model.predict_proba(test_feats)
         preds.append(pred[:,1])
     for idx, label_name in enumerate(label_reg_names):
         model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
-        print("Regression Predicting--- ", idx+1, "th label ", label_name, "......")
+        print("Regression Predicting--- ", idx+1, "th label ", label_name, 
+        " using xgboost_fine_"+label_name+".pkl......")
         pred = model.predict(test_feats)
         preds.append(pred)
     result = pd.DataFrame(np.column_stack(preds), columns=all_labels)
@@ -259,8 +258,8 @@ def main():
     # ----------------------train models----------------------------
     # clf_scores = classification_task(train_features_extracted, train_labels_clf)
     # print(clf_scores)
-    # reg_scores = regression_task(train_features_extracted, train_labels_reg)
-    # print(reg_scores)
+    reg_scores = regression_task(train_features_extracted, train_labels_reg)
+    print(reg_scores)
 
     # ----------------------prediction-------------------------------
     predict(test_pids, test_features_extracted)
