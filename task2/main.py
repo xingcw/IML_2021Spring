@@ -217,6 +217,31 @@ def regression_task(train_data, train_labels):
     result = pd.DataFrame(np.row_stack(scores), columns=["CV score", "Test score (R2)"], index=label_reg_names)
     return result
 
+def refit(train_data, train_labels_clf, train_labels_reg):
+    for idx in range(len(label_clf_names)):
+        label_name = label_clf_names[idx]
+        sampler = RandomUnderSampler()
+        train_this_label = train_labels_clf[:, idx]
+        train_this_data, train_this_label = sampler.fit_resample(train_data, train_this_label)
+        shuffle = np.random.permutation(np.asarray(range(0, len(train_this_label))))
+        feats, labels = train_this_data[shuffle], train_this_label[shuffle]
+        model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
+        print("Classification Refitting--- ", idx+1, "th class ", label_name, 
+        " to xgboost_refit_"+label_name+".pkl......")
+        model.fit(feats, labels, eval_metric='logloss')
+        joblib.dump(model, os.path.join(model_path, "xgboost_refit_"+label_name+".pkl"))
+
+    for idx in range(len(label_reg_names)):
+        label_name = label_reg_names[idx]
+        train_this_label = train_labels_reg[:, idx]
+        shuffle = np.random.permutation(np.asarray(range(0, len(train_this_label))))
+        feats, labels = train_data[shuffle], train_this_label[shuffle]
+        model = joblib.load(os.path.join(model_path, "xgboost_fine_"+label_name+".pkl"))
+        print("Regression Refitting--- ", idx+1, "th class ", label_name, 
+        " to xgboost_refit_"+label_name+".pkl......")
+        model.fit(feats, labels)
+        joblib.dump(model, os.path.join(model_path, "xgboost_refit_"+label_name+".pkl"))
+
 
 def predict(test_pids, test_feats):
     preds = [test_pids]
@@ -237,6 +262,25 @@ def predict(test_pids, test_feats):
     result.to_csv(os.path.join(submission_path,"predictions.zip"), index=False, float_format='%.3f', compression='zip')
     result.to_csv(os.path.join(submission_path,"predictions.csv"), index=False, float_format='%.3f')
     
+def refit_predict(test_pids, test_feats):
+    preds = [test_pids]
+    all_labels = ['pid']+label_clf_names+label_reg_names
+    for idx, label_name in enumerate(label_clf_names):
+        model = joblib.load(os.path.join(model_path, "xgboost_refit_"+label_name+".pkl"))
+        print("Classification Predicting--- ", idx+1, "th class ", label_name, 
+        " using xgboost_refit_"+label_name+".pkl......")
+        pred = model.predict_proba(test_feats)
+        preds.append(pred[:,1])
+    for idx, label_name in enumerate(label_reg_names):
+        model = joblib.load(os.path.join(model_path, "xgboost_refit_"+label_name+".pkl"))
+        print("Regression Predicting--- ", idx+1, "th label ", label_name, 
+        " using xgboost_refit_"+label_name+".pkl......")
+        pred = model.predict(test_feats)
+        preds.append(pred)
+    result = pd.DataFrame(np.column_stack(preds), columns=all_labels)
+    result.to_csv(os.path.join(submission_path,"predictions.zip"), index=False, float_format='%.3f', compression='zip')
+    result.to_csv(os.path.join(submission_path,"predictions.csv"), index=False, float_format='%.3f')
+  
 
 def main():
     # ---------------------load data-------------------------------
@@ -256,13 +300,17 @@ def main():
     test_features_extracted = preproc(test_features, source='test')
 
     # ----------------------train models----------------------------
-    # clf_scores = classification_task(train_features_extracted, train_labels_clf)
-    # print(clf_scores)
+    clf_scores = classification_task(train_features_extracted, train_labels_clf)
+    print(clf_scores)
     reg_scores = regression_task(train_features_extracted, train_labels_reg)
     print(reg_scores)
 
+    # ----------------------refit models----------------------------
+    refit(train_features_extracted, train_labels_clf, train_labels_reg)
+
     # ----------------------prediction-------------------------------
-    predict(test_pids, test_features_extracted)
+    # predict(test_pids, test_features_extracted)
+    refit_predict(test_pids, test_features_extracted)
 
 
 main()
