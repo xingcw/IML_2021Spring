@@ -12,7 +12,6 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold, RandomizedSearchCV
 from sklearn.svm import SVC
-from imblearn.under_sampling import RandomUnderSampler
 from sklearn.metrics import roc_auc_score, classification_report, confusion_matrix, r2_score
 from imblearn.under_sampling import RandomUnderSampler
 
