@@ -35,7 +35,7 @@ class EmbeddingNet(nn.Module):
                                 nn.PReLU(),
                                 nn.Dropout(0.3),
                                 nn.Linear(64, 64),
-                                nn.PReLU()
+                                nn.PReLU(),
                                 )
 
     def forward(self, x):

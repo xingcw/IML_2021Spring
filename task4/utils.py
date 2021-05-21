@@ -21,7 +21,7 @@ class TripletFoodDataset(Dataset):
         self.transforms = transforms
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.samples)
 
     def __getitem__(self, item):
         if not self.triplet:

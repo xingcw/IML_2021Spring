@@ -149,6 +149,7 @@ dmypy.json
 *.bin
 *.h5
 *.pt
+**/models/*
 
 # mac file
 **/.DS_Store
