@@ -7,11 +7,12 @@ import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 import torchvision.transforms.functional as VF
+from albumentations.pytorch import ToTensorV2
 
 
 class TripletFoodDataset(Dataset):
 
-    def __init__(self, root, split='train', transforms=None, triplet=True):
+    def __init__(self, root, split='train', transforms=None, triplet=True, torchvision=True):
         self.root = root
         self.food_dir = os.path.join(root, 'food')
         self.imgs = os.listdir(self.food_dir)
@@ -19,6 +20,7 @@ class TripletFoodDataset(Dataset):
         self.samples = np.loadtxt(self.split, delimiter=' ').astype(int)
         self.triplet = triplet
         self.transforms = transforms
+        self.torchvision = torchvision
 
     def __len__(self):
         return len(self.samples)
@@ -29,8 +31,12 @@ class TripletFoodDataset(Dataset):
         else:
             image_paths = [os.path.join(self.food_dir, self.imgs[i]) for i in self.samples[item]]
             images = [Image.open(path) for path in image_paths]
-        if self.transforms:
+        if self.transforms and self.torchvision:
             images = [self.transforms(image) for image in images]
+        elif self.transforms and not self.torchvision:
+            images = [np.array(image) for image in images]
+            augments = [self.transforms(image=image) for image in images]
+            images = [aug['image'] for aug in augments]
         return images
 
 

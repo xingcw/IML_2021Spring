@@ -1,6 +1,7 @@
 import torch
 from tqdm import tqdm
 import pandas as pd
+import albumentations as A
 from torchvision.transforms import Pad, Normalize, Resize, Compose, ToTensor, RandomHorizontalFlip, \
     RandomErasing, RandomRotation, CenterCrop
 from torch.utils.data import DataLoader, random_split
@@ -24,7 +25,10 @@ def train_local():
     # ======================== preprocessing ====================
     transforms = Compose([MyPad(), Resize((224, 224)), ToTensor(),
                           Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46))])
-    Trainset = TripletFoodDataset('dataset', 'train', transforms)
+    A_transforms = A.Compose([A.Resize(256, 256), A.RandomCrop(224, 224),
+                              A.RandomRotate90(p=0.5), A.HorizontalFlip(p=0.5),
+                              A.Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46)), ToTensorV2()])
+    Trainset = TripletFoodDataset('dataset', 'train', A_transforms, torchvision=False)
     train_size = int(0.8 * len(Trainset))
     val_size = len(Trainset) - train_size
     train_set, val_set = random_split(Trainset, [train_size, val_size])
@@ -50,9 +54,12 @@ def train_remote():
     torch.manual_seed(123)
     transforms = Compose([MyPad(), Resize((256, 256)), CenterCrop(224), RandomHorizontalFlip(0.2), RandomRotation(90),
                           ToTensor(), Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46))])
+    A_transforms = A.Compose([A.Resize(256, 256), A.RandomCrop(224, 224),
+                              A.RandomRotate90(p=0.5), A.HorizontalFlip(p=0.5),
+                              A.Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46)), ToTensorV2()])
     # RandomErasing()])
     # Running on ETH euler
-    Trainset = TripletFoodDataset(tmpdir + '/dataset', 'train', transforms)
+    Trainset = TripletFoodDataset(tmpdir + '/dataset', 'train', A_transforms, torchvision=False)
     train_size = int(0.8 * len(Trainset))
     val_size = len(Trainset) - train_size
     train_set, val_set = random_split(Trainset, [train_size, val_size])
@@ -95,6 +102,6 @@ def predict():
 
 
 if __name__ == '__main__':
-    # train_local()
+    train_local()
     # train_remote()
-    predict()
+    # predict()
