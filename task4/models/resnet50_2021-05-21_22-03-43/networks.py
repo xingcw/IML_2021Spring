@@ -3,6 +3,11 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 
+def set_parameter_requires_grad(model):
+    for param in model.parameters():
+        param.requires_grad = False
+
+
 class EmbeddingNet(nn.Module):
     def __init__(self, model=None, pretrain=True):
         super(EmbeddingNet, self).__init__()
@@ -15,7 +20,7 @@ class EmbeddingNet(nn.Module):
         elif model == 'mobilenet_v2':
             self.convnet = models.mobilenet_v2(pretrained=pretrain)
         elif model == 'resnet50':
-            self.convnet = models.resnet50(pretrained=True)
+            self.convnet = models.resnet50(pretrained=pretrain)
         else:
             self.convnet = nn.Sequential(nn.Conv2d(3, 32, 7), nn.PReLU(),
                                          nn.MaxPool2d(2, stride=2),
@@ -24,15 +29,19 @@ class EmbeddingNet(nn.Module):
                                          nn.Conv2d(32, 32, 3), nn.PReLU(),
                                          nn.MaxPool2d(2, stride=2)
                                          )
+        if model != 'manual':
+            set_parameter_requires_grad(self.convnet)
         self.fc = nn.Sequential(nn.Linear(1000, 64),
                                 nn.PReLU(),
                                 nn.Dropout(0.3),
-                                nn.Linear(64, 64))
+                                nn.Linear(64, 64),
+                                nn.PReLU()
+                                )
 
     def forward(self, x):
         output = self.convnet(x)
-        # output = output.view(output.size()[0], -1)
-        # output = self.fc(output)
+        output = output.view(output.size()[0], -1)
+        output = self.fc(output)
         return output
 
     def get_embedding(self, x):

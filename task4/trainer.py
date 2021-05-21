@@ -2,7 +2,6 @@ import os
 import shutil
 import torch
 import datetime
-import numpy as np
 
 
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, backbone,
@@ -18,24 +17,27 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
     if metrics is None:
         metrics = []
 
-    best_val = -1
+    best_val = 1
 
     for epoch in range(0, start_epoch):
         scheduler.step()
 
     for epoch in range(start_epoch, n_epochs):
         # Train stage
-        train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics)
-        message = f'Epoch: {epoch + 1}/{n_epochs}. Train set: Average loss: {train_loss:.4f}'
+        returns = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics)
+        train_loss, metrics, [easy, semi_hard, hard] = returns
+        message = f'Epoch: {epoch + 1}/{n_epochs}  Train set: Average loss: {train_loss:.4f}  '
         for metric in metrics:
-            message += f'\t{metric.name()}: {metric.value()}'
+            message += f' {metric.name()}: {metric.value():4f}\t'
+        message += f'Easy ratio: {easy:.2f}  Semi Hard ratio: {semi_hard:.2f}  Hard ratio: {hard:.2f}'
 
         # Validation stage
-        val_loss, metrics = test_epoch(val_loader, model, loss_fn, cuda, metrics)
+        val_loss, metrics, [easy, semi_hard, hard] = test_epoch(val_loader, model, loss_fn, cuda, metrics)
         val_loss /= len(val_loader)
-        message += f'\nEpoch: {epoch + 1}/{n_epochs}. Validation set: Average loss: {val_loss:.4f}'
+        message += f'\nEpoch: {epoch + 1}/{n_epochs}  Validation set: Average loss: {val_loss:.4f}\t'
         for metric in metrics:
-            message += f'\t{metric.name()}: {metric.value()}'
+            message += f'{metric.name()}: {metric.value():4f}\t'
+        message += f'Easy ratio: {easy:.2f}  Semi Hard ratio: {semi_hard:.2f}  Hard ratio: {hard:.2f}'
         print(message)
         scheduler.step(val_loss)
 
@@ -57,9 +59,8 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         metric.reset()
 
     model.train()
-    losses = []
     total_loss = 0
-
+    easy_ratio, semi_hard_ratio, hard_ratio = 0, 0, 0
     for batch_idx, data in enumerate(train_loader):
         target = None
         if not type(data) in (tuple, list):
@@ -75,27 +76,34 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
 
         loss_inputs = outputs
         loss_outputs = loss_fn(*loss_inputs)
-        loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
-        losses.append(loss.item())
+        loss, [easy, semi_hard, hard] = loss_outputs
         total_loss += loss.item()
         loss.backward()
         optimizer.step()
+        easy_ratio += easy / train_loader.batch_size
+        semi_hard_ratio += semi_hard / train_loader.batch_size
+        hard_ratio += hard / train_loader.batch_size
 
         for metric in metrics:
-            metric(outputs, target, loss_outputs)
+            metric(outputs, target, loss.item())
 
         if batch_idx % log_interval == 0:
-            message = 'Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                batch_idx * len(data[0]), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), np.mean(losses))
+            message = 'Train: [{}/{} ({:.0f}%)] Loss: {:.6f}'.format(
+                batch_idx * train_loader.batch_size * log_interval, len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item())
             for metric in metrics:
-                message += f'\t{metric.name()}: {metric.value()}'
-
+                message += f' {metric.name()}: {metric.value():.6f}\t'
+            batch_size = train_loader.batch_size
+            message += f'Easy ratio: {easy/batch_size:.2f}  Semi Hard ratio: {semi_hard/batch_size:.2f}  ' \
+                       f'Hard ratio: {hard/batch_size:.2f}'
             print(message)
-            losses = []
 
-    total_loss /= (batch_idx + 1)
-    return total_loss, metrics
+    total_loss /= len(train_loader)
+    easy_ratio /= len(train_loader)
+    semi_hard_ratio /= len(train_loader)
+    hard_ratio /= len(train_loader)
+
+    return total_loss, metrics, [easy_ratio, semi_hard_ratio, hard_ratio]
 
 
 def test_epoch(val_loader, model, loss_fn, cuda, metrics):
@@ -104,6 +112,7 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
             metric.reset()
         model.eval()
         val_loss = 0
+        easy_ratio, semi_hard_ratio, hard_ratio = 0, 0, 0
         for batch_idx, data in enumerate(val_loader):
             target = None
             if not type(data) in (tuple, list):
@@ -118,10 +127,17 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
             loss_inputs = outputs
 
             loss_outputs = loss_fn(*loss_inputs)
-            loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
+            loss, [easy, semi_hard, hard] = loss_outputs
             val_loss += loss.item()
+            easy_ratio += easy / val_loader.batch_size
+            semi_hard_ratio += semi_hard / val_loader.batch_size
+            hard_ratio += hard / val_loader.batch_size
 
             for metric in metrics:
-                metric(outputs, target, loss_outputs)
-
-    return val_loss, metrics
+                metric(outputs, target, loss.item())
+                
+        easy_ratio /= len(val_loader)
+        semi_hard_ratio /= len(val_loader)
+        hard_ratio /= len(val_loader)
+        
+    return val_loss, metrics, [easy_ratio, semi_hard_ratio, hard_ratio]

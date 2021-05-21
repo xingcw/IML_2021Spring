@@ -54,11 +54,16 @@ class TripletLoss(nn.Module):
         super(TripletLoss, self).__init__()
         self.margin = margin
 
-    def forward(self, anchor, positive, negative, size_average=True):
+    def forward(self, anchor, positive, negative):
         distance_positive = (anchor - positive).pow(2).sum(1)
         distance_negative = (anchor - negative).pow(2).sum(1)
-        losses = F.relu(distance_positive - distance_negative + self.margin)
-        return losses.mean() if size_average else losses.sum()
+        triplet_loss = distance_positive - distance_negative + self.margin
+        num_pos_triplets = (triplet_loss > 0).float().sum()
+        num_hard_triplets = (triplet_loss > self.margin).float().sum()
+        num_semi_hard_triplets = num_pos_triplets - num_hard_triplets
+        num_easy_triplets = (triplet_loss <= 0).float().sum()
+        losses = F.relu(triplet_loss)
+        return losses.mean(), [num_easy_triplets, num_semi_hard_triplets, num_hard_triplets]
 
 
 class AverageNonzeroTripletsMetric:
@@ -70,7 +75,7 @@ class AverageNonzeroTripletsMetric:
         self.values = []
 
     def __call__(self, outputs, target, loss):
-        self.values.append(loss.cpu().detach().numpy())
+        self.values.append(loss)
         return self.value()
 
     def reset(self):
