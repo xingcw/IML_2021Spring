@@ -161,3 +161,4 @@ dmypy.json
 **/data_sets/*
 *.csv.gz
 *.zip
+*.tar
