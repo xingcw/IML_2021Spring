@@ -163,3 +163,6 @@ dmypy.json
 *.csv.gz
 *.zip
 *.tar
+
+# submissions
+*.txt

@@ -4,8 +4,15 @@ import torchvision.models as models
 
 
 def set_parameter_requires_grad(model):
-    for param in model.parameters():
-        param.requires_grad = False
+    for name, child in model.named_children():
+        if name in ['layer3', 'layer4', 'avgpool', 'fc']:
+            print(name + ' is unfrozen')
+            for param in child.parameters():
+                param.requires_grad = True
+        else:
+            print(name + ' is frozen')
+            for param in child.parameters():
+                param.requires_grad = False
 
 
 class EmbeddingNet(nn.Module):
@@ -21,6 +28,9 @@ class EmbeddingNet(nn.Module):
             self.convnet = models.mobilenet_v2(pretrained=pretrain)
         elif model == 'resnet50':
             self.convnet = models.resnet50(pretrained=pretrain)
+            set_parameter_requires_grad(self.convnet)
+            num_feats = self.convnet.fc.in_features
+            self.convnet.fc = nn.Linear(num_feats, 256)
         else:
             self.convnet = nn.Sequential(nn.Conv2d(3, 32, 7), nn.PReLU(),
                                          nn.MaxPool2d(2, stride=2),
@@ -29,19 +39,20 @@ class EmbeddingNet(nn.Module):
                                          nn.Conv2d(32, 32, 3), nn.PReLU(),
                                          nn.MaxPool2d(2, stride=2)
                                          )
-        if model != 'manual':
-            set_parameter_requires_grad(self.convnet)
-        self.fc = nn.Sequential(nn.Linear(1000, 64),
+        self.fc = nn.Sequential(nn.BatchNorm1d(256),
                                 nn.PReLU(),
                                 nn.Dropout(0.3),
-                                nn.Linear(64, 64),
+                                nn.Linear(256, 128),
+                                nn.BatchNorm1d(128),
                                 nn.PReLU(),
+                                nn.Dropout(0.3),
                                 )
 
     def forward(self, x):
         output = self.convnet(x)
         output = output.view(output.size()[0], -1)
         output = self.fc(output)
+        output = F.normalize(output)
         return output
 
     def get_embedding(self, x):

@@ -10,6 +10,19 @@ from trainer import fit
 from utils import *
 
 
+def get_fine_tune_params(model):
+    fine_tunes = ['layer3', 'layer4', 'avgpool', 'fc']
+    params = []
+    for name, child in model.embedding_net.convnet.named_children():
+        if name in fine_tunes:
+            params.extend(child.parameters())
+    params_to_update = [
+        {'params': list(model.embedding_net.fc.parameters()), 'lr': 1e-3},
+        {'params': params, 'lr': 1e-5},
+    ]
+    return params_to_update
+
+
 def train_local():
     torch.manual_seed(123)
     # ================ get all images statistics ===============
@@ -25,25 +38,26 @@ def train_local():
     # ======================== preprocessing ====================
     transforms = Compose([MyPad(), Resize((224, 224)), ToTensor(),
                           Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46))])
-    A_transforms = A.Compose([A.Resize(256, 256), A.RandomCrop(224, 224),
+    A_transforms = A.Compose([A.Resize(224, 224),
                               A.RandomRotate90(p=0.5), A.HorizontalFlip(p=0.5),
                               A.Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46)), ToTensorV2()])
     Trainset = TripletFoodDataset('dataset', 'train', A_transforms, torchvision=False)
     train_size = int(0.8 * len(Trainset))
     val_size = len(Trainset) - train_size
     train_set, val_set = random_split(Trainset, [train_size, val_size])
-    train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
-    val_loader = DataLoader(val_set, batch_size=200, shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=32, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=64, shuffle=True)
 
     # ==================== get model and train ==================
     backbone = 'resnet50'
     emdnet = EmbeddingNet(backbone, pretrain=False)
     model = TripletNet(emdnet).cuda()
     print(model)
-    adam = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=2e-4)
+    params_to_update = get_fine_tune_params(model)
+    adam = torch.optim.Adam(params_to_update, lr=1e-5, betas=(0.9, 0.999), eps=1e-08, weight_decay=2e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(adam, patience=20, threshold=0.005)
     metric = AverageNonzeroTripletsMetric()
-    loss_fn = TripletLoss(0.3)
+    loss_fn = TripletLoss(0.5)
     fit(train_loader, val_loader, model, loss_fn, adam, scheduler, 100, True, 1, backbone, metrics=[metric])
 
 
@@ -63,7 +77,7 @@ def train_remote():
     train_size = int(0.8 * len(Trainset))
     val_size = len(Trainset) - train_size
     train_set, val_set = random_split(Trainset, [train_size, val_size])
-    train_loader = DataLoader(train_set, batch_size=512, shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=128, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=500, shuffle=True)
 
     # ==================== get model and train ==================
@@ -71,20 +85,27 @@ def train_remote():
     emdnet = EmbeddingNet(backbone)
     model = TripletNet(emdnet).cuda()
     print(model)
-    adam = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-08, weight_decay=2e-4)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(adam, patience=20, threshold=0.005)
+    params_to_update = get_fine_tune_params(model)
+    adam = torch.optim.Adam(params_to_update, lr=1e-4, betas=(0.9, 0.999), eps=1e-08, weight_decay=2e-4)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(adam, patience=1, threshold=0.005)
     metric = AverageNonzeroTripletsMetric()
-    loss_fn = TripletLoss(0.3)
+    loss_fn = TripletLoss(0.5)
     fit(train_loader, val_loader, model, loss_fn, adam, scheduler, 100, True, 2, backbone,
-        val_thresh=0.25, metrics=[metric])
+        val_thresh=0.4, metrics=[metric])
 
 
 def predict():
+    tmpdir = os.getenv('TMPDIR')
+    os.system(f'tar -xvf dataset.tar -C {tmpdir}')
+    torch.manual_seed(123)
+
     transforms = Compose([MyPad(), Resize((224, 224)), ToTensor(),
                           Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46))])
-    Testset = TripletFoodDataset('dataset', 'test', transforms)
+    A_transforms = A.Compose([A.Resize(256, 256), A.RandomCrop(224, 224),
+                              A.Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46)), ToTensorV2()])
+    Testset = TripletFoodDataset(tmpdir + '/dataset', 'test', A_transforms, torchvision=False)
     test_loader = DataLoader(Testset, batch_size=200, shuffle=False)
-    saved_model = torch.load('models/best_resnet50.pth')
+    saved_model = torch.load('models/resnet50_2021-05-22_01-13-53/epoch17_val_0.23353557102382183_resnet50.pth')
     backbone = 'resnet50'
     emdnet = EmbeddingNet(backbone)
     model = TripletNet(emdnet).cuda()

@@ -23,13 +23,16 @@ class TripletFoodDataset(Dataset):
         self.torchvision = torchvision
 
     def __len__(self):
-        return len(self.samples)
+        if self.triplet:
+            return len(self.samples)
+        else:
+            return len(self.imgs)
 
     def __getitem__(self, item):
         if not self.triplet:
             images = Image.open(os.path.join(self.food_dir, self.imgs[item]))
         else:
-            image_paths = [os.path.join(self.food_dir, self.imgs[i]) for i in self.samples[item]]
+            image_paths = [os.path.join(self.food_dir, f'{i:05d}.jpg') for i in self.samples[item]]
             images = [Image.open(path) for path in image_paths]
         if self.transforms and self.torchvision:
             images = [self.transforms(image) for image in images]
