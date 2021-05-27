@@ -5,13 +5,13 @@ import albumentations as A
 from torchvision.transforms import Pad, Normalize, Resize, Compose, ToTensor, RandomHorizontalFlip, \
     RandomErasing, RandomRotation, CenterCrop
 from torch.utils.data import DataLoader, random_split
-from networks import EmbeddingNet, TripletNet
+from networks import EmbeddingNet, TripletNet, FT_PARAMS
 from trainer import fit
 from utils import *
 
 
 def get_fine_tune_params(model):
-    fine_tunes = ['layer3', 'layer4', 'avgpool', 'fc']
+    fine_tunes = FT_PARAMS
     params = []
     for name, child in model.embedding_net.convnet.named_children():
         if name in fine_tunes:
@@ -68,7 +68,7 @@ def train_remote():
     torch.manual_seed(123)
     transforms = Compose([MyPad(), Resize((256, 256)), CenterCrop(224), RandomHorizontalFlip(0.2), RandomRotation(90),
                           ToTensor(), Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46))])
-    A_transforms = A.Compose([A.Resize(256, 256), A.RandomCrop(224, 224),
+    A_transforms = A.Compose([A.Resize(256, 256), A.RandomCrop(224, 224), A.RandomBrightnessContrast(p=0.2),
                               A.RandomRotate90(p=0.5), A.HorizontalFlip(p=0.5),
                               A.Normalize(mean=(155.08, 131.61, 105.13), std=(32.44, 31.13, 33.46)), ToTensorV2()])
     # RandomErasing()])
@@ -89,9 +89,9 @@ def train_remote():
     adam = torch.optim.Adam(params_to_update, lr=1e-4, betas=(0.9, 0.999), eps=1e-08, weight_decay=2e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(adam, patience=1, threshold=0.005)
     metric = AverageNonzeroTripletsMetric()
-    loss_fn = TripletLoss(0.5)
+    loss_fn = TripletLoss(1.0)
     fit(train_loader, val_loader, model, loss_fn, adam, scheduler, 100, True, 2, backbone,
-        val_thresh=0.4, metrics=[metric])
+        val_thresh=0.85, metrics=[metric])
 
 
 def predict():
@@ -123,6 +123,6 @@ def predict():
 
 
 if __name__ == '__main__':
-    train_local()
-    # train_remote()
+    # train_local()
+    train_remote()
     # predict()

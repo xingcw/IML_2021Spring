@@ -3,9 +3,12 @@ import torch.nn.functional as F
 import torchvision.models as models
 
 
+FT_PARAMS = ['layer4', 'avgpool', 'fc']
+
+
 def set_parameter_requires_grad(model):
     for name, child in model.named_children():
-        if name in ['layer3', 'layer4', 'avgpool', 'fc']:
+        if name in FT_PARAMS:
             print(name + ' is unfrozen')
             for param in child.parameters():
                 param.requires_grad = True
@@ -41,11 +44,12 @@ class EmbeddingNet(nn.Module):
                                          )
         self.fc = nn.Sequential(nn.BatchNorm1d(256),
                                 nn.PReLU(),
-                                nn.Dropout(0.3),
+                                nn.Dropout(0.5),
                                 nn.Linear(256, 128),
                                 nn.BatchNorm1d(128),
                                 nn.PReLU(),
-                                nn.Dropout(0.3),
+                                nn.Dropout(0.5),
+                                nn.Linear(128, 128)
                                 )
 
     def forward(self, x):
