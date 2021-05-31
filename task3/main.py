@@ -17,9 +17,8 @@ data_path = os.path.join(current_path,'datasets')
 model_path = os.path.join(current_path,'models')
 
 PARAM_DIST = {
-    'alpha': np.logspace(-10, 2, num=10),
     'hidden_layer_sizes': [
-        (90, 10), (90, 50), (90, 90), (90, 30, 10), (90, 90, 30, 10)
+        (90, 30, 10), (90, 60, 30, 10), (90, 90, 60, 10), (90, 90, 90, 90)
     ]
 }
 
@@ -93,7 +92,7 @@ def main():
         np.save(saved_Test_data_path, test_data_enc)
 
     # --------------------------Cross Validation--------------------------------
-    model = MLPClassifier(learning_rate='adaptive', max_iter=5000, random_state=42)
+    """ model = MLPClassifier(learning_rate='adaptive', max_iter=5000, random_state=42, alpha=0.1)
     clf = GridSearchCV(estimator=model,
                         param_grid=PARAM_DIST,
                         cv=5,
@@ -110,14 +109,32 @@ def main():
     # --------------------------Refitting--------------------------------
     print("Refitting ... model is stored in ", os.path.join(model_path, filename))
     clf.best_estimator_.fit(train_features_res_enc, train_labels_res)
-    joblib.dump(clf.best_estimator_, os.path.join(model_path, filename))
+    joblib.dump(clf.best_estimator_, os.path.join(model_path, filename)) """
+
+    # --------------------------Single Fitting--------------------------------
+    """ model = MLPClassifier(learning_rate='adaptive', 
+                            max_iter=5000, 
+                            random_state=42, 
+                            alpha=1e-10, 
+                            hidden_layer_sizes=(90, 60, 30, 10))
+    model.fit(train_features_res_enc, train_labels_res)
+    pred = model.predict(test_data_enc)[:,1]
+    pred_prob = model.predict_proba(test_data_enc)[:,1]
+    result = pd.DataFrame(pred)
+    pred_prob = pd.DataFrame(pred_prob)
+    result.to_csv(os.path.join(data_path,"predictions.csv"), index=False, header=False)
+    pred_prob.to_csv(os.path.join(data_path,"prob_predictions.csv"), index=False, header=False) """
+
 
     # --------------------------Predicting--------------------------------
-    loadfile = filename
+    loadfile = "MLPclassifier.pkl"
     if os.path.exists(os.path.join(model_path, loadfile)):
         clf_model = joblib.load(os.path.join(model_path, loadfile))
         pred = clf_model.predict(test_data_enc)
-        result = pd.DataFrame(pred)
+        pred_prob = clf_model.predict_proba(test_data_enc)
+        result = pd.DataFrame(pred, columns = ["zero"])
+        pred_prob = pd.DataFrame(pred_prob, columns = ["zero","one"]).one
         result.to_csv(os.path.join(data_path,"predictions.csv"), index=False, header=False)
+        pred_prob.to_csv(os.path.join(data_path,"prob_predictions.csv"), index=False, header=False)
 
 main()

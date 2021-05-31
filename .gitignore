@@ -159,5 +159,6 @@ dmypy.json
 
 # datasets
 **/data_sets/*
+**/datasets/*
 *.csv.gz
 *.zip
