@@ -1,6 +1,6 @@
 """main.py
 tensorflow=2.5.0
-opencv-pytho=4.5.2
+opencv-python=4.5.2
 """
 import os
 from sys import argv
@@ -20,14 +20,12 @@ from tensorflow.keras.applications.resnet_v2 import ResNet50V2, preprocess_input
 from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2, preprocess_input as MobileNetV2_preproc
 from tensorflow.keras.applications.inception_v3 import InceptionV3, preprocess_input as InceptionV3_preproc
 
-from tensorflow.keras.preprocessing import image
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import InputLayer, Dense, BatchNormalization, Activation, Dropout
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.models import load_model
-
-import albumentations
 
 # ---------------------Specify Directory-------------------------------
 current_path = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +38,7 @@ prediction_path = os.path.join(current_path,'predictions')
 TASK = 'predict'
 BASE_MODEL_NAME = "ResNet101" #argv[1]
 IF_AUG = False #argv[2]
-START_TIME = "05-30-20-18-45"
+START_TIME = "06-01-18-08-04"
 N_HIDDEN_LAYERS = 2
 N_HIDDEN_UNITS = [1000, 500]
 ACTI_FUNC = ['relu', 'relu']
@@ -57,7 +55,7 @@ MODELS = {'Xception':[Xception(weights='imagenet', pooling='avg', include_top=Fa
         'ResNet101': [ResNet101(weights='imagenet', pooling='avg', include_top=False), ResNet101_preproc]}
 
 # --------------------- Functions ---------------------------------------
-def extract(model_name, if_aug=False, img_height=224, img_width=224, batch_size=200):
+def extract(model_name, img_height=224, img_width=224, batch_size=200):
     #read and preprocess images in batches because of memory limit
 
     print("Preprocessing ... Using model ...", model_name)
@@ -65,25 +63,11 @@ def extract(model_name, if_aug=False, img_height=224, img_width=224, batch_size=
     preprocess_input = MODELS[model_name][1]
     
     # directory for saving embed
-    extract_sub_dir = 'extract_aug' if if_aug else 'extract'
+    extract_sub_dir = 'extract'
     save_dir = os.path.join(data_path, model_name, extract_sub_dir)
     os.makedirs(save_dir, exist_ok=True)
 
-    file_id = 0  # file id in current batch
-    batch_id = 0
     img_batch = None
-
-    # define image augmentation transform
-    transform = albumentations.Compose([
-        albumentations.RandomRotate90(p=0.5),
-        albumentations.Transpose(p=0.5),
-        albumentations.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.50, rotate_limit=45, p=.75),
-        albumentations.Blur(blur_limit=3, p=0.5),
-        albumentations.OpticalDistortion(p=0.5),
-        albumentations.GridDistortion(p=0.5),
-        albumentations.HueSaturationValue(p=0.5),
-    ])
-
     # Read and preprocess images in batches
     FileList = sorted(os.listdir(image_path))
     n_FileList = len(FileList)
@@ -94,10 +78,10 @@ def extract(model_name, if_aug=False, img_height=224, img_width=224, batch_size=
         for j in range(batch_size):
             index = i*batch_size + j
             filename = os.fsdecode(FileList[index])
-            image = cv2.imread(os.path.join(image_path, filename))
-            x = cv2.resize(image, (img_height, img_width))
-            if if_aug:
-                x = transform(image=x)['image']  # get image from dict
+            # image = cv2.imread(os.path.join(image_path, filename))
+            # x = cv2.resize(image, (img_width, img_height))
+            img = load_img(os.path.join(image_path, filename), target_size=(img_height, img_width))
+            x = img_to_array(img)
             x = np.expand_dims(x, axis=0)
             x = preprocess_input(x)
             image_batch.append(x)
@@ -119,9 +103,7 @@ def extract(model_name, if_aug=False, img_height=224, img_width=224, batch_size=
             index = n_batch*batch_size+i
             filename = os.fsdecode(FileList[index])
             image = cv2.imread(os.path.join(image_path, filename))
-            x = cv2.resize(image, (img_height, img_width))
-            if if_aug:
-                x = transform(image=x)['image']  # get image from dict
+            x = cv2.resize(image, (img_width, img_height))
             x = np.expand_dims(x, axis=0)
             x = preprocess_input(x)
             image_batch.append(x)
@@ -134,8 +116,8 @@ def extract(model_name, if_aug=False, img_height=224, img_width=224, batch_size=
         print("Preprocessing ... Save batch images to ", save_path)
         np.save(save_path, feats_np)
 
-def train_model(base_model_name, train_triplets, if_aug, n_hidden_layers, n_hidden_units, 
-                act_func, drop_frac, batch_size=64, lr=1e-3, early_stop_iters=3, n_folds=5):
+def train_model(base_model_name, train_triplets, n_hidden_layers, n_hidden_units, 
+                act_func, drop_frac, batch_size=128, lr=1e-3, early_stop_iters=3, n_folds=5):
     
     print("Training ... using model ", base_model_name)
     # Check parameter setting
@@ -144,7 +126,7 @@ def train_model(base_model_name, train_triplets, if_aug, n_hidden_layers, n_hidd
     assert n_hidden_layers == len(drop_frac), "Check drop_frac"
 
     # Read preprocessed data
-    extract_sub_dir = 'extract_aug' if if_aug else 'extract'
+    extract_sub_dir = 'extract'
     extract_dir = os.path.join(data_path, base_model_name, extract_sub_dir)
 
     image_batch_list = []
@@ -180,8 +162,8 @@ def train_model(base_model_name, train_triplets, if_aug, n_hidden_layers, n_hidd
 
     del pos_arr, neg_arr, pos_label, neg_label, total_images, cur_arr, train_triplets  # save memory
 
-    # shuffle here
-    total_data, total_label = shuffle(total_data, total_label, random_state=23)
+    # shuffle dataset
+    total_data, total_label = shuffle(total_data, total_label, random_state=42)
 
     now = datetime.now()
     current_time = now.strftime("%m-%d-%H-%M-%S")
@@ -209,22 +191,23 @@ def train_model(base_model_name, train_triplets, if_aug, n_hidden_layers, n_hidd
         last_act_func = 'sigmoid'
         model.add(Dense(1, activation=last_act_func))
 
-        optimizer = Adam(learning_rate=lr)
+        optimizer = Adam(learning_rate = lr)
         model.compile(optimizer=optimizer, loss='binary_crossentropy')
         model.summary()
 
         early_cb = EarlyStopping(monitor='val_loss', patience=early_stop_iters)
 
-        history = model.fit(X_train, y_train,
-                            batch_size=batch_size,
-                            epochs=100,
-                            callbacks=[early_cb],
-                            validation_data=(X_val, y_val))
+        model.fit(X_train, y_train,
+                batch_size=batch_size,
+                epochs=100,
+                callbacks=[early_cb],
+                validation_data=(X_val, y_val)
+        )
 
         model.save(os.path.join(save_dir, f"fold_{fold_idx}.h5"))
 
         y_val_pred = model.predict(X_val)
-        y_val_pred = np.round(y_val_pred).ravel()  # ravel in case of 2d array
+        y_val_pred = np.round(y_val_pred).ravel() 
 
         acc_score = accuracy_score(y_val, y_val_pred)
         print("Fold %d accuracy: " %fold_idx, acc_score)
@@ -235,7 +218,7 @@ def train_model(base_model_name, train_triplets, if_aug, n_hidden_layers, n_hidd
     avg_acc_score = sum(acc_list) / len(acc_list)
     acc_df = pd.DataFrame(acc_list)
     print(acc_df)
-    print(f"{current_time} Avg Accuracy = {avg_acc_score}")
+    print(current_time, " Avg Accuracy = ", avg_acc_score)
 
     # Re-fitting
     print("Training ... Refitting ...")
@@ -252,12 +235,12 @@ def train_model(base_model_name, train_triplets, if_aug, n_hidden_layers, n_hidd
     optimizer = Adam(learning_rate=lr)
     refit_model.compile(optimizer=optimizer, loss='binary_crossentropy')
     refit_model.summary()
-    early_cb = EarlyStopping(monitor='val_loss', patience=early_stop_iters)
+    refit_early_cb = EarlyStopping(monitor='val_loss', patience=early_stop_iters)
     refit_model.fit(total_data, total_label,
             batch_size=batch_size,
-            epochs=100,
-            callbacks=[early_cb],
-            validation_data=(X_val, y_val))
+            epochs=500,
+            callbacks=[refit_early_cb],
+    )
     model.save(os.path.join(save_dir, "refit.h5"))
 
 def predict(base_model_name, test_triplets, n_folds, model_filename):
@@ -291,6 +274,7 @@ def predict(base_model_name, test_triplets, n_folds, model_filename):
         preds_list.append(preds)
     preds_mat = np.column_stack(preds_list)
     row_sum = np.sum(preds_mat, axis=1)
+    row_mean = np.mean(preds_mat, axis=1)
     out_preds = np.zeros((test_data.shape[0], ), dtype=np.int8)
     out_preds[row_sum < n_folds/2] = 0
     out_preds[row_sum >= n_folds/2] = 1
@@ -308,6 +292,10 @@ def predict(base_model_name, test_triplets, n_folds, model_filename):
     save_path_fold = os.path.join(save_dir, "fold.txt")
     np.savetxt(save_path_fold, out_preds.astype(int), fmt='%i')
     print("Predicting ... fold prediction done and saved")
+
+    save_path_fold_prob = os.path.join(save_dir, "fold_prob.txt")
+    np.savetxt(save_path_fold_prob, row_mean.astype(int), fmt='%.8e')
+    print("Predicting ... fold probability prediction done and saved")
 
     save_path_refit = os.path.join(save_dir, "refit.txt")
     np.savetxt(save_path_refit, refit_out_preds.astype(int), fmt='%i')
@@ -344,12 +332,12 @@ def main():
     # ---------------------preprocessing-------------------------------
     if TASK == 'extract':
         print("\nPreprocessing .......")
-        extract(model_name=BASE_MODEL_NAME, use_aug=IF_AUG, img_height=224, img_width=224, batch_size=200,)
+        extract(model_name=BASE_MODEL_NAME, img_height=224, img_width=224, batch_size=200,)
 
     # ---------------------training-------------------------------
     elif TASK == 'train':
         print("\nTraining .......")
-        train_model(base_model_name=BASE_MODEL_NAME, train_triplets=train_raw, use_aug=IF_AUG,
+        train_model(base_model_name=BASE_MODEL_NAME, train_triplets=train_raw,
                     n_hidden_layers=N_HIDDEN_LAYERS,
                     n_hidden_units=N_HIDDEN_UNITS,
                     act_func=ACTI_FUNC,
@@ -362,6 +350,4 @@ def main():
         print("\nPredicting .......")
         predict(BASE_MODEL_NAME, test_triplets=test_raw, n_folds=N_FOLDDS, model_filename=START_TIME)
 
-
-    
 main()
