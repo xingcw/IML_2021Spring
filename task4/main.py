@@ -35,10 +35,11 @@ model_path = os.path.join(current_path,'models')
 prediction_path = os.path.join(current_path,'predictions')
 
 # ---------------------Configurations----------------------------------
-TASK = 'predict'
+TASK = 'assembly'
 BASE_MODEL_NAME = "ResNet101" #argv[1]
 IF_AUG = False #argv[2]
 START_TIME = "06-01-18-08-04"
+ASSEMBLY_NAMES = ["06-01-18-08-04", "06-01-20-18-43"]
 N_HIDDEN_LAYERS = 2
 N_HIDDEN_UNITS = [1000, 500]
 ACTI_FUNC = ['relu', 'relu']
@@ -235,11 +236,9 @@ def train_model(base_model_name, train_triplets, n_hidden_layers, n_hidden_units
     optimizer = Adam(learning_rate=lr)
     refit_model.compile(optimizer=optimizer, loss='binary_crossentropy')
     refit_model.summary()
-    refit_early_cb = EarlyStopping(monitor='val_loss', patience=early_stop_iters)
     refit_model.fit(total_data, total_label,
             batch_size=batch_size,
-            epochs=500,
-            callbacks=[refit_early_cb],
+            epochs=200,
     )
     model.save(os.path.join(save_dir, "refit.h5"))
 
@@ -294,12 +293,45 @@ def predict(base_model_name, test_triplets, n_folds, model_filename):
     print("Predicting ... fold prediction done and saved")
 
     save_path_fold_prob = os.path.join(save_dir, "fold_prob.txt")
-    np.savetxt(save_path_fold_prob, row_mean.astype(int), fmt='%.8e')
+    np.savetxt(save_path_fold_prob, row_mean)
     print("Predicting ... fold probability prediction done and saved")
 
     save_path_refit = os.path.join(save_dir, "refit.txt")
     np.savetxt(save_path_refit, refit_out_preds.astype(int), fmt='%i')
     print("Predicting ... refit prediction done and saved")
+
+def assembly(pred_names):
+    print("assembly results from ", pred_names)
+    n_assembly = len(pred_names)
+    preds_list = []
+    for pred_name in pred_names:
+        pred_path = os.path.join(prediction_path, pred_name, 'fold_prob.txt')
+        file = np.loadtxt(pred_path)
+        preds_list.append(file)
+    all_preds = np.column_stack(preds_list)
+    print(all_preds)
+    out_preds = np.zeros((all_preds.shape[0], ), dtype=np.int8)
+    row_sum = np.mean(all_preds, axis=1)
+    out_preds[row_sum < 0.5] = 0
+    out_preds[row_sum >= 0.5] = 1
+
+    save_path = os.path.join(prediction_path, 'assembly.txt')
+    np.savetxt(save_path, out_preds.astype(int), fmt='%i')
+
+def voter():
+    path1 = os.path.join(prediction_path, "06-01-18-08-04", "fold.txt")
+    path2 = os.path.join(prediction_path, "06-01-20-18-43", "fold.txt")
+    path3 = os.path.join(prediction_path, "assembly.txt")
+
+    file1 = np.loadtxt(path1)
+    file2 = np.loadtxt(path2)
+    file3 = np.loadtxt(path3)
+
+    all_pred = np.column_stack([file1, file2, file3])
+    number_1s = np.sum(all_pred, axis=1)
+    number_0s = 3 - number_1s
+    vote = np.where(number_1s < number_0s, np.zeros_like(number_0s), np.ones_like(number_1s))
+    np.savetxt(os.path.join(prediction_path, 'vote.txt'), vote, fmt='%i')
 
 def main():
     # ---------------------load data-------------------------------
@@ -312,23 +344,6 @@ def main():
     print("Dataset loaded ... Shape of traning tripletes: ", train_raw.shape) #(59515, 3)
     print("Dataset loaded ... Shape of testing tripletes: ", test_raw.shape) #(59544, 3)
     
-    """ # ---------------------preprocessing-------------------------------
-    print("\nPreprocessing .......")
-
-    # extract(model_name=BASE_MODEL_NAME, if_aug=IF_AUG, img_height=224, img_width=224, batch_size=200)
-
-    print("\nTraining .......")
-    train_model(base_model_name=BASE_MODEL_NAME, train_triplets=train_raw, if_aug=IF_AUG,
-                    n_hidden_layers=N_HIDDEN_LAYERS,
-                    n_hidden_units=N_HIDDEN_UNITS,
-                    act_func=ACTI_FUNC,
-                    drop_frac=DROP_FRAC,
-                    batch_size=BATCH_SIZE, lr=LEARN_RATE,
-                    early_stop_iters=3, n_folds=N_FOLDDS)
-
-    print("\nPredicting .......")
-    predict(BASE_MODEL_NAME, test_triplets=test_raw, n_folds=N_FOLDDS, model_filename="05-30-20-18-45") """
-
     # ---------------------preprocessing-------------------------------
     if TASK == 'extract':
         print("\nPreprocessing .......")
@@ -350,4 +365,8 @@ def main():
         print("\nPredicting .......")
         predict(BASE_MODEL_NAME, test_triplets=test_raw, n_folds=N_FOLDDS, model_filename=START_TIME)
 
+    elif TASK == 'assembly':
+        print("\nAssembling predicted results .......")
+        assembly(ASSEMBLY_NAMES)
+        
 main()
